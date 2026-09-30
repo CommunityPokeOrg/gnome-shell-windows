@@ -90,6 +90,13 @@ clones of live window contents, so previews stay current. Real Start Menu
 apps are read by the main process (`fs.readdirSync` over the two Programs
 folders) and launched with `shell.openPath`, keeping the renderer sandboxed.
 
+## Windhawk port
+
+`windhawk/` contains a work-in-progress native port of the shell as
+several focused Windhawk mods (C++, injected into `explorer.exe`): the
+top-bar clock, the Activities hot corner/hotkey, dynamic workspaces, and
+quick-settings routing. See [windhawk/README.md](windhawk/README.md).
+
 ## Roadmap ideas
 
 - Real window thumbnail embedding (host actual HWNDs)
