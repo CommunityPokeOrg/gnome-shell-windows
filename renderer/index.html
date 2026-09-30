@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>Adwaita Shell</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="wallpaper"></div>
+
+  <!-- Window layer -->
+  <div id="desktop"></div>
+
+  <!-- Top bar -->
+  <header id="topbar">
+    <div class="tb-left">
+      <button id="activities-btn" class="tb-btn strong">Activities</button>
+      <button id="appmenu" class="tb-btn appmenu hidden">
+        <span id="appmenu-icon" class="appicon-sm"></span>
+        <span id="appmenu-name"></span>
+        <span class="tb-arrow">▾</span>
+      </button>
+    </div>
+    <button id="clock-btn" class="tb-btn clock"><span id="clock-text"></span></button>
+    <div class="tb-right">
+      <button id="status-btn" class="tb-btn status">
+        <span class="ic" id="st-wifi" data-ic="wifi"></span>
+        <span class="ic" data-ic="volume"></span>
+        <span class="ic" data-ic="battery"></span>
+        <span class="tb-arrow">▾</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Dock -->
+  <nav id="dock" class="dock"></nav>
+
+  <!-- Activities overview -->
+  <div id="overview" class="hidden">
+    <div id="search-wrap">
+      <div id="search-box">
+        <span class="ic" data-ic="search"></span>
+        <input id="search" type="text" placeholder="Type to search" autocomplete="off" spellcheck="false" />
+      </div>
+    </div>
+    <div id="overview-body">
+      <div id="window-spread"></div>
+      <div id="workspace-strip"></div>
+    </div>
+    <div id="app-grid-wrap" class="hidden">
+      <div id="app-grid"></div>
+      <div id="grid-dots"></div>
+    </div>
+    <nav id="dash" class="dock"></nav>
+  </div>
+
+  <!-- Calendar / notifications popover -->
+  <div id="calendar-popover" class="popover hidden">
+    <div class="cal-head">
+      <button class="cal-nav" id="cal-prev">‹</button>
+      <div id="cal-title"></div>
+      <button class="cal-nav" id="cal-next">›</button>
+    </div>
+    <div id="cal-grid"></div>
+    <div class="notif-head">
+      <span>Notifications</span>
+      <label class="dnd"><input type="checkbox" id="dnd-toggle" /> Do Not Disturb</label>
+    </div>
+    <div id="notif-list"></div>
+    <button id="clear-notifs" class="ghost-btn">Clear All</button>
+  </div>
+
+  <!-- Quick settings -->
+  <div id="quicksettings" class="popover hidden">
+    <div class="qs-grid">
+      <button class="qs-tile" id="qs-wifi"><span class="ic qs-ico" data-ic="wifi"></span><span class="qs-lbl">Wi-Fi</span><span class="qs-sub">Connected</span></button>
+      <button class="qs-tile" id="qs-bt"><span class="ic qs-ico" data-ic="bluetooth"></span><span class="qs-lbl">Bluetooth</span><span class="qs-sub">Off</span></button>
+      <button class="qs-tile" id="qs-dark"><span class="ic qs-ico" data-ic="moon"></span><span class="qs-lbl">Dark Style</span><span class="qs-sub">On</span></button>
+      <button class="qs-tile" id="qs-air"><span class="ic qs-ico" data-ic="plane"></span><span class="qs-lbl">Airplane</span><span class="qs-sub">Off</span></button>
+    </div>
+    <div class="qs-slider"><span class="ic" data-ic="volume"></span><input type="range" id="vol-slider" min="0" max="100" value="70" /></div>
+    <div class="qs-slider"><span class="ic" data-ic="sun"></span><input type="range" id="bright-slider" min="10" max="100" value="85" /></div>
+    <div class="qs-footer">
+      <span class="qs-battery"><span class="ic" data-ic="battery"></span> 84%</span>
+      <button id="qs-settings-btn" class="ghost-btn">Settings</button>
+      <button id="qs-power-btn" class="ghost-btn"><span class="ic" data-ic="power"></span></button>
+    </div>
+  </div>
+
+  <!-- Power menu -->
+  <div id="power-menu" class="popover hidden">
+    <button class="pm-item" data-act="lock"><span class="ic" data-ic="lock"></span> Lock Screen</button>
+    <button class="pm-item" data-act="suspend"><span class="ic" data-ic="moon"></span> Suspend</button>
+    <button class="pm-item" data-act="minimize"><span class="ic" data-ic="dash"></span> Minimize Shell</button>
+    <hr />
+    <button class="pm-item danger" data-act="quit"><span class="ic" data-ic="power"></span> Exit Shell…</button>
+  </div>
+
+  <!-- Modal dialogs -->
+  <div id="modal-scrim" class="hidden"><div id="modal-box"></div></div>
+
+  <!-- Notification banners -->
+  <div id="banners"></div>
+
+  <script src="apps.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax-check sources
+        run: npm run check
+
+      - name: Build unpacked app (electron-builder --dir)
+        run: npx electron-builder --dir
+
+      - name: Upload unpacked build
+        uses: actions/upload-artifact@v4
+        with:
+          name: adwaita-shell-win-unpacked
+          path: dist/win-unpacked/**
+          if-no-files-found: ignore
