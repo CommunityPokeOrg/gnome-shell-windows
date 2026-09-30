@@ -7,7 +7,7 @@
 // @github          https://github.com/CommunityPoke
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lole32 -luuid -luser32 -ldwmapi
+// @compilerOptions -lole32 -luuid -luser32 -lversion -ldwmapi
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -74,6 +74,7 @@ GNOME behavior.
 #include <windhawk_utils.h>
 
 #include <dwmapi.h>
+#include <winver.h>
 #include <ObjectArray.h>
 #include <shobjidl.h>
 
@@ -94,111 +95,156 @@ const GUID CLSID_VirtualDesktopManagerInternal = {
     0xc5e0cdca, 0x7b6e, 0x41b2,
     {0x9f, 0xc4, 0xd9, 0x39, 0x75, 0xcc, 0x46, 0x7b}};
 
-// Windows 11 26100+ layout.
-const GUID IID_IVirtualDesktop_New = {
-    0x3f07f4be, 0xb107, 0x441a,
-    {0xaf, 0x0f, 0x39, 0xd8, 0x25, 0x29, 0x07, 0x2c}};
-const GUID IID_IVirtualDesktopManagerInternal_New = {
-    0x53f5ca0b, 0x158f, 0x4124,
-    {0x90, 0x0c, 0x05, 0x71, 0x58, 0x06, 0x0b, 0x27}};
-
-// Older Windows 10/11 layout (VD.ahk values).
-const GUID IID_IVirtualDesktop_Old = {
-    0xff72ffdd, 0xbe7e, 0x43fc,
-    {0x9c, 0x03, 0xad, 0x81, 0x68, 0x1e, 0x88, 0xe4}};
-const GUID IID_IVirtualDesktopManagerInternal_Old = {
-    0xf31574d6, 0xb682, 0x4cdc,
-    {0xbd, 0x56, 0x18, 0x27, 0x86, 0x0a, 0xbe, 0xc6}};
-
-// 26100+ vtable: both IVirtualDesktop variants only need GetId at index 4.
+// IVirtualDesktop: only GetId (vtable index 4) is ever called, and its
+// layout is identical on every build even though the IID varies. Desktop
+// objects are fetched via IUnknown and invoked through the shared vtable.
 DECLARE_INTERFACE_IID_(IVirtualDesktop, IUnknown,
                        "3f07f4be-b107-441a-af0f-39d82529072c") {
     STDMETHOD(Dummy3)() PURE;
     STDMETHOD(GetId)(GUID * pGuid) PURE;
 };
 
-DECLARE_INTERFACE_IID_(IVirtualDesktopManagerInternalNew, IUnknown,
-                       "53f5ca0b-158f-4124-900c-057158060b27") {
-    STDMETHOD(Dummy3)() PURE;
-    STDMETHOD(MoveViewToDesktop)(IUnknown* pView,
-                                 IVirtualDesktop* pDesktop) PURE;
-    STDMETHOD(Dummy5)() PURE;
-    STDMETHOD(GetCurrentDesktop)(IVirtualDesktop * *desktop) PURE;
-    STDMETHOD(GetDesktops)(IObjectArray * *desktops) PURE;
-    STDMETHOD(Dummy8)() PURE;
-    STDMETHOD(SwitchDesktop)(IVirtualDesktop * desktop) PURE;
-    STDMETHOD(Dummy10)() PURE;
-    STDMETHOD(CreateDesktop)(IVirtualDesktop * *newDesktop) PURE;
-    STDMETHOD(Dummy12)() PURE;
-    STDMETHOD(RemoveDesktop)
-    (IVirtualDesktop* desktop, IVirtualDesktop* fallback) PURE;
+// IVirtualDesktopManagerInternal is versioned by Windows build: both its IID
+// and its vtable slots move. Candidate IIDs from VD.ahk's build table.
+const GUID kVdManagerIids[] = {
+    {0x53f5ca0b, 0x158f, 0x4124,
+     {0x90, 0x0c, 0x05, 0x71, 0x58, 0x06, 0x0b, 0x27}},  // 22631.3085+
+    {0x4970ba3d, 0xfd4e, 0x4647,
+     {0xbe, 0xa3, 0xd8, 0x90, 0x76, 0xef, 0x4b, 0x9c}},  // 22621.2215+
+    {0xb2f925b9, 0x5a0f, 0x4d2e,
+     {0x9f, 0x4d, 0x2b, 0x15, 0x07, 0x59, 0x3c, 0x10}},  // 22000+
+    {0x094afe11, 0x44f2, 0x4ba0,
+     {0x97, 0x6f, 0x29, 0xa9, 0x7e, 0x26, 0x3e, 0xe0}},  // 20348+
+    {0xf31574d6, 0xb682, 0x4cdc,
+     {0xbd, 0x56, 0x18, 0x27, 0x86, 0x0a, 0xbe, 0xc6}},  // 17763+
 };
 
-// Pre-26100 vtable.
-DECLARE_INTERFACE_IID_(IVirtualDesktopManagerInternalOld, IUnknown,
-                       "f31574d6-b682-4cdc-bd56-1827860abec6") {
-    STDMETHOD(GetCount)(int* count) PURE;
-    STDMETHOD(MoveViewToDesktop)(IUnknown* pView,
-                                 IVirtualDesktop* pDesktop) PURE;
-    STDMETHOD(CanViewMoveDesktops)(IUnknown* pView) PURE;
-    STDMETHOD(GetCurrentDesktop)(IVirtualDesktop * *desktop) PURE;
-    STDMETHOD(GetDesktops)(IObjectArray * *desktops) PURE;
-    STDMETHOD(DummyGetAdjacent)() PURE;
-    STDMETHOD(SwitchDesktop)(IVirtualDesktop * desktop) PURE;
-    STDMETHOD(CreateDesktop)(IVirtualDesktop * *newDesktop) PURE;
-    STDMETHOD(RemoveDesktop)
-    (IVirtualDesktop* desktop, IVirtualDesktop* fallback) PURE;
-    STDMETHOD(FindDesktop)(const GUID* id, IVirtualDesktop** desktop) PURE;
+// Per-build IVirtualDesktop IIDs. Desktop objects must be fetched with the
+// matching IID: their primary vtable is not the desktop interface, so
+// GetAt(IID_IUnknown) yields an object whose slot 4 is not GetId.
+const GUID kVdDesktopIids[] = {
+    {0x3f07f4be, 0xb107, 0x441a,
+     {0xaf, 0x0f, 0x39, 0xd8, 0x25, 0x29, 0x07, 0x2c}},  // 22631.3085+
+    {0xa3175f2d, 0x239c, 0x4bd2,
+     {0x8a, 0xa0, 0xee, 0xba, 0x8b, 0x0b, 0x13, 0x8e}},  // 22621.2215+
+    {0x536d3495, 0xb208, 0x4cc9,
+     {0xae, 0x26, 0xde, 0x81, 0x11, 0x27, 0x5b, 0xf8}},  // 22000+
+    {0x62fdf88b, 0x11ca, 0x4afb,
+     {0x8b, 0xd8, 0x22, 0x96, 0xdf, 0xae, 0x49, 0xe2}},  // 20348+
+    {0xff72ffdd, 0xbe7e, 0x43fc,
+     {0x9c, 0x03, 0xad, 0x81, 0x68, 0x1e, 0x88, 0xe4}},  // 17763+
 };
 
-IVirtualDesktopManagerInternalNew* g_desktopManagerNew = nullptr;
-IVirtualDesktopManagerInternalOld* g_desktopManagerOld = nullptr;
+IUnknown* g_vdManager = nullptr;
 IVirtualDesktopManager* g_publicDesktopManager = nullptr;  // SDK type.
 
-const IID& DesktopIID() {
-    return g_desktopManagerNew ? IID_IVirtualDesktop_New
-                               : IID_IVirtualDesktop_Old;
+// Vtable slots for the desktop methods, selected per build. Some builds
+// take a leading HMONITOR argument on the desktop accessors.
+struct {
+    int getCurrent;
+    int getDesktops;
+    int switchD;
+    int create;
+    int remove;
+    bool takesMonitor;
+    const GUID* desktopIid;
+} g_vdLayout{};
+
+// twinui.pcshell.dll owns the interface; its file version tracks the vtable
+// layout more closely than the OS version does.
+bool GetShellBuild(DWORD* build, DWORD* revision) {
+    WCHAR sysdir[MAX_PATH];
+    if (!GetSystemDirectoryW(sysdir, ARRAYSIZE(sysdir))) {
+        return false;
+    }
+    WCHAR path[MAX_PATH];
+    swprintf_s(path, L"%s\\twinui.pcshell.dll", sysdir);
+
+    DWORD size = GetFileVersionInfoSizeW(path, nullptr);
+    if (!size) {
+        return false;
+    }
+    std::vector<BYTE> data(size);
+    if (!GetFileVersionInfoW(path, 0, size, data.data())) {
+        return false;
+    }
+    VS_FIXEDFILEINFO* info = nullptr;
+    UINT infoLen = 0;
+    if (!VerQueryValueW(data.data(), L"\\", (LPVOID*)&info, &infoLen) ||
+        !info) {
+        return false;
+    }
+    *build = HIWORD(info->dwFileVersionLS);
+    *revision = LOWORD(info->dwFileVersionLS);
+    return true;
+}
+
+// Vtable slot indices from VD.ahk's per-build table.
+void SelectVdLayout() {
+    DWORD build = 0, revision = 0;
+    GetShellBuild(&build, &revision);
+
+    if (build > 0 && build < 20348) {
+        g_vdLayout = {6, 7, 9, 10, 11, false, &kVdDesktopIids[4]};
+    } else if (build > 0 && build < 22000) {
+        g_vdLayout = {6, 7, 9, 10, 11, true, &kVdDesktopIids[3]};
+    } else if (build > 0 && build < 22483) {
+        g_vdLayout = {6, 7, 9, 10, 12, true, &kVdDesktopIids[2]};
+    } else if (build > 0 &&
+               (build < 22621 || (build == 22621 && revision < 2215))) {
+        g_vdLayout = {6, 8, 10, 11, 13, true, &kVdDesktopIids[2]};
+    } else if (build > 0 && build < 26100) {
+        g_vdLayout = {6, 7, 9, 10, 12, false,
+                      build > 22631 || (build == 22631 && revision >= 3085)
+                          ? &kVdDesktopIids[0]
+                          : &kVdDesktopIids[1]};
+    } else {
+        // 26100+, or an unknown build: assume the current layout.
+        g_vdLayout = {6, 7, 9, 11, 13, false, &kVdDesktopIids[0]};
+    }
+
+    Wh_Log(L"VD ABI: twinui build %u.%u, monitor-arg %s", build, revision,
+           g_vdLayout.takesMonitor ? L"yes" : L"no");
+}
+
+template <typename... Args>
+HRESULT VdInvoke(int index, Args... args) {
+    if (!g_vdManager) {
+        return E_FAIL;
+    }
+    auto** vtbl = *reinterpret_cast<void***>(g_vdManager);
+    using Fn = HRESULT(WINAPI*)(void*, Args...);
+    return reinterpret_cast<Fn>(vtbl[index])(g_vdManager, args...);
 }
 
 HRESULT VdGetCurrentDesktop(IVirtualDesktop** pp) {
-    if (g_desktopManagerNew) {
-        return g_desktopManagerNew->GetCurrentDesktop(pp);
-    }
-    return g_desktopManagerOld->GetCurrentDesktop(pp);
+    return g_vdLayout.takesMonitor
+               ? VdInvoke(g_vdLayout.getCurrent, (HMONITOR) nullptr, pp)
+               : VdInvoke(g_vdLayout.getCurrent, pp);
 }
 HRESULT VdGetDesktops(IObjectArray** pp) {
-    if (g_desktopManagerNew) {
-        return g_desktopManagerNew->GetDesktops(pp);
-    }
-    return g_desktopManagerOld->GetDesktops(pp);
+    return g_vdLayout.takesMonitor
+               ? VdInvoke(g_vdLayout.getDesktops, (HMONITOR) nullptr, pp)
+               : VdInvoke(g_vdLayout.getDesktops, pp);
 }
 HRESULT VdSwitchDesktop(IVirtualDesktop* d) {
-    if (g_desktopManagerNew) {
-        return g_desktopManagerNew->SwitchDesktop(d);
-    }
-    return g_desktopManagerOld->SwitchDesktop(d);
+    return g_vdLayout.takesMonitor
+               ? VdInvoke(g_vdLayout.switchD, (HMONITOR) nullptr, d)
+               : VdInvoke(g_vdLayout.switchD, d);
 }
 HRESULT VdCreateDesktop(IVirtualDesktop** pp) {
-    if (g_desktopManagerNew) {
-        return g_desktopManagerNew->CreateDesktop(pp);
-    }
-    return g_desktopManagerOld->CreateDesktop(pp);
+    return g_vdLayout.takesMonitor
+               ? VdInvoke(g_vdLayout.create, (HMONITOR) nullptr, pp)
+               : VdInvoke(g_vdLayout.create, pp);
 }
 HRESULT VdRemoveDesktop(IVirtualDesktop* d, IVirtualDesktop* fallback) {
-    if (g_desktopManagerNew) {
-        return g_desktopManagerNew->RemoveDesktop(d, fallback);
-    }
-    return g_desktopManagerOld->RemoveDesktop(d, fallback);
+    return VdInvoke(g_vdLayout.remove, d, fallback);
 }
 
 void CleanupCOM() {
-    if (g_desktopManagerNew) {
-        g_desktopManagerNew->Release();
-        g_desktopManagerNew = nullptr;
-    }
-    if (g_desktopManagerOld) {
-        g_desktopManagerOld->Release();
-        g_desktopManagerOld = nullptr;
+    if (g_vdManager) {
+        g_vdManager->Release();
+        g_vdManager = nullptr;
     }
     if (g_publicDesktopManager) {
         g_publicDesktopManager->Release();
@@ -207,8 +253,7 @@ void CleanupCOM() {
 }
 
 bool InitializeCOM() {
-    if ((g_desktopManagerNew || g_desktopManagerOld) &&
-        g_publicDesktopManager) {
+    if (g_vdManager && g_publicDesktopManager) {
         return true;
     }
 
@@ -220,15 +265,12 @@ bool InitializeCOM() {
                                   __uuidof(IServiceProvider),
                                   (void**)&pServiceProvider);
     if (SUCCEEDED(hr) && pServiceProvider) {
-        if (FAILED(pServiceProvider->QueryService(
-                CLSID_VirtualDesktopManagerInternal,
-                IID_IVirtualDesktopManagerInternal_New,
-                (void**)&g_desktopManagerNew))) {
-            // Fall back to the pre-26100 interface.
-            pServiceProvider->QueryService(
-                CLSID_VirtualDesktopManagerInternal,
-                IID_IVirtualDesktopManagerInternal_Old,
-                (void**)&g_desktopManagerOld);
+        for (const GUID& iid : kVdManagerIids) {
+            if (SUCCEEDED(pServiceProvider->QueryService(
+                    CLSID_VirtualDesktopManagerInternal, iid,
+                    (void**)&g_vdManager))) {
+                break;
+            }
         }
         pServiceProvider->Release();
     }
@@ -237,15 +279,13 @@ bool InitializeCOM() {
                      CLSCTX_INPROC_SERVER, __uuidof(IVirtualDesktopManager),
                      (void**)&g_publicDesktopManager);
 
-    if ((!g_desktopManagerNew && !g_desktopManagerOld) ||
-        !g_publicDesktopManager) {
+    if (!g_vdManager || !g_publicDesktopManager) {
         Wh_Log(L"Virtual desktop COM init failed");
         CleanupCOM();
         return false;
     }
 
-    Wh_Log(L"Virtual desktop ABI: %s",
-           g_desktopManagerNew ? L"26100+" : L"legacy");
+    SelectVdLayout();
     return true;
 }
 
@@ -420,7 +460,7 @@ void EvaluateDesktops() {
 
     for (UINT i = 0; i < count; i++) {
         IVirtualDesktop* pDesktop = nullptr;
-        if (FAILED(pDesktops->GetAt(i, DesktopIID(),
+        if (FAILED(pDesktops->GetAt(i, *g_vdLayout.desktopIid,
                                    (void**)&pDesktop)) ||
             !pDesktop) {
             continue;
@@ -516,15 +556,21 @@ int GetDesktopList(std::vector<IVirtualDesktop*>* out,
     }
 
     IObjectArray* pDesktops = nullptr;
-    if (FAILED(VdGetDesktops(&pDesktops)) || !pDesktops) {
+    HRESULT hr = VdGetDesktops(&pDesktops);
+    if (FAILED(hr) || !pDesktops) {
+        Wh_Log(L"GetDesktops failed: 0x%x", hr);
         return -1;
     }
 
     IVirtualDesktop* pCurrent = nullptr;
     GUID currentId{};
+    hr = VdGetCurrentDesktop(&pCurrent);
     bool haveCurrent =
-        SUCCEEDED(VdGetCurrentDesktop(&pCurrent)) && pCurrent &&
+        SUCCEEDED(hr) && pCurrent &&
         SUCCEEDED(pCurrent->GetId(&currentId));
+    if (FAILED(hr)) {
+        Wh_Log(L"GetCurrentDesktop failed: 0x%x", hr);
+    }
     if (pCurrent) {
         pCurrent->Release();
     }
@@ -535,7 +581,7 @@ int GetDesktopList(std::vector<IVirtualDesktop*>* out,
     int currentIndex = -1;
     for (UINT i = 0; i < count; i++) {
         IVirtualDesktop* pDesktop = nullptr;
-        if (FAILED(pDesktops->GetAt(i, DesktopIID(),
+        if (FAILED(pDesktops->GetAt(i, *g_vdLayout.desktopIid,
                                    (void**)&pDesktop)) ||
             !pDesktop) {
             continue;
@@ -606,8 +652,10 @@ enum {
     kHotkeyMoveRight,
 };
 
-const UINT_PTR kEvaluateTimer = 1;   // Debounced evaluation.
-const UINT_PTR kPollTimer = 2;       // Light poll for external changes.
+// Windows ignores the requested ID for NULL-hwnd timers and generates one,
+// returned by SetTimer; WM_TIMER wParam carries the generated ID.
+UINT_PTR g_evaluateTimer = 0;  // Debounced evaluation.
+UINT_PTR g_pollTimer = 0;      // Light poll for external changes.
 
 HANDLE g_thread = nullptr;
 DWORD g_threadId = 0;
@@ -616,8 +664,10 @@ std::atomic<bool> g_unloading{false};
 void ScheduleEvaluate() {
     if (g_threadId) {
         // Coalesce bursts of events into a single evaluation.
-        KillTimer(nullptr, kEvaluateTimer);
-        SetTimer(nullptr, kEvaluateTimer, 150, nullptr);
+        if (g_evaluateTimer) {
+            KillTimer(nullptr, g_evaluateTimer);
+        }
+        g_evaluateTimer = SetTimer(nullptr, 0, 150, nullptr);
     }
 }
 
@@ -639,7 +689,7 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hook,
 bool DesktopTopologyUnchanged() {
     static UINT lastCount = 0;
 
-    if (!g_desktopManagerNew && !g_desktopManagerOld) {
+    if (!g_vdManager) {
         return true;
     }
 
@@ -711,7 +761,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
 
     // Catch desktop switches performed outside this mod (Win+Tab, trackpad
     // gestures) so dynamic normalization still runs.
-    SetTimer(nullptr, kPollTimer, 1000, nullptr);
+    g_pollTimer = SetTimer(nullptr, 0, 1000, nullptr);
 
     EvaluateDesktops();
     Wh_Log(L"Workspace thread started");
@@ -738,10 +788,11 @@ DWORD WINAPI WorkerThread(LPVOID) {
                     break;
 
                 case WM_TIMER:
-                    if (msg.wParam == kEvaluateTimer) {
-                        KillTimer(nullptr, kEvaluateTimer);
+                    if (msg.wParam == g_evaluateTimer) {
+                        KillTimer(nullptr, g_evaluateTimer);
+                        g_evaluateTimer = 0;
                         EvaluateDesktops();
-                    } else if (msg.wParam == kPollTimer) {
+                    } else if (msg.wParam == g_pollTimer) {
                         if (!DesktopTopologyUnchanged()) {
                             Wh_Log(L"Desktop topology changed");
                             EvaluateDesktops();
@@ -770,8 +821,12 @@ DWORD WINAPI WorkerThread(LPVOID) {
     if (hookShow) {
         UnhookWinEvent(hookShow);
     }
-    KillTimer(nullptr, kEvaluateTimer);
-    KillTimer(nullptr, kPollTimer);
+    if (g_evaluateTimer) {
+        KillTimer(nullptr, g_evaluateTimer);
+    }
+    if (g_pollTimer) {
+        KillTimer(nullptr, g_pollTimer);
+    }
 
     CleanupCOM();
     CoUninitialize();

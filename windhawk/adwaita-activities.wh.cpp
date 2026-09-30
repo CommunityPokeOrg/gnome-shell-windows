@@ -343,9 +343,11 @@ DWORD WINAPI WorkerThread(LPVOID) {
     RegisterOverviewHotkey();
 
     // Poll the cursor position with a timer; 50 ms is far below any
-    // perceptible corner latency and keeps CPU use negligible.
-    const UINT_PTR kPollTimer = 2;
-    SetTimer(nullptr, kPollTimer, 50, nullptr);
+    // perceptible corner latency and keeps CPU use negligible. For a
+    // NULL-hwnd timer Windows generates the ID itself and returns it from
+    // SetTimer; WM_TIMER wParam carries that generated ID, not the one
+    // passed in.
+    UINT_PTR pollTimer = SetTimer(nullptr, 0, 50, nullptr);
 
     DWORD dwellStart = 0;
     bool armed = true;
@@ -362,7 +364,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
                     break;
 
                 case WM_TIMER:
-                    if (msg.wParam != kPollTimer) {
+                    if (msg.wParam != pollTimer) {
                         break;
                     }
                     if (g_settings.action == Action::None) {
@@ -417,7 +419,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
     }
 
     UnregisterHotKey(nullptr, kHotkeyId);
-    KillTimer(nullptr, kPollTimer);
+    KillTimer(nullptr, pollTimer);
     return 0;
 }
 

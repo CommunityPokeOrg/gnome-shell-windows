@@ -108,7 +108,9 @@ HANDLE g_thread = nullptr;
 DWORD g_threadId = 0;
 std::atomic<bool> g_unloading{false};
 
-const UINT_PTR kCornerTimer = 1;
+// Windows ignores the requested ID for NULL-hwnd timers and generates one,
+// returned by SetTimer; WM_TIMER wParam carries the generated ID.
+
 enum { WM_RELOAD = WM_APP };
 
 // ---------------------------------------------------------------------------
@@ -361,7 +363,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
     MSG msg;
     PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);  // Force the queue.
 
-    SetTimer(nullptr, kCornerTimer, 50, nullptr);
+    UINT_PTR cornerTimer = SetTimer(nullptr, 0, 50, nullptr);
 
     DWORD dwellStart = 0;
     bool armed = true;
@@ -370,7 +372,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
         if (msg.hwnd == nullptr) {
             switch (msg.message) {
                 case WM_TIMER:
-                    if (msg.wParam != kCornerTimer) {
+                    if (msg.wParam != cornerTimer) {
                         break;
                     }
                     // Resubclass trays created later (e.g. a new monitor's
@@ -428,7 +430,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
         DispatchMessage(&msg);
     }
 
-    KillTimer(nullptr, kCornerTimer);
+    KillTimer(nullptr, cornerTimer);
     return 0;
 }
 
