@@ -9,6 +9,10 @@ language.
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-3584e4)
 ![Runtime](https://img.shields.io/badge/runtime-Electron-2b2e3b)
 
+> **Native port:** a C++ [Windhawk](https://windhawk.net/) mod that runs the
+> same shell inside `explorer.exe` lives in [`windhawk/`](windhawk/README.md)
+> — no Electron required.
+
 ## Features
 
 - **Top bar** — Activities button, focused-app menu, centered clock, and a
